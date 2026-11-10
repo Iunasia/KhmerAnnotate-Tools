@@ -1,0 +1,36 @@
+# --- Data: scraped/raw/processed text never goes into git ---
+data/*
+
+# Model weights / training outputs
+*.bin
+*.safetensors
+*.pt
+*.ckpt
+runs/
+outputs/
+checkpoints/
+wandb/
+
+# Wikipedia dumps
+*.xml.bz2
+*.xml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.ipynb_checkpoints/
+.pytest_cache/
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets
+.env

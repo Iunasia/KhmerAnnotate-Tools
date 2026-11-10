@@ -1,0 +1,10 @@
+# collector
+requests>=2.31
+beautifulsoup4>=4.12
+tqdm>=4.66
+
+# baseline (install when you get to the XLM-R step)
+# torch
+# transformers>=4.40
+# datasets
+# seqeval
