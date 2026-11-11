@@ -1,39 +1,40 @@
+"""Collect original Khmer text articles from VOA Khmer.
+
+The collector discovers articles from category pages or VOA's sitemap, checks
+robots.txt, skips likely wire-service material, and writes one JSON object per
+line. Existing URLs are not downloaded again unless ``--overwrite`` is used.
+
+Examples (run from the repository root):
+
+    python collector/voa_khmer_scraper.py --max 50
+    python collector/voa_khmer_scraper.py --source sitemap --max 500
+    python collector/voa_khmer_scraper.py --overwrite --max 20
 """
-VOA Khmer scraper for KhmerAnnotate (Capstone I).
 
-Reads VOA Khmer articles and saves text + source + date + author + licence.
-No lxml needed (uses Python's built-in XML reader + html.parser).
-
-Two ways to find articles:
-  --source category   (default) walk category pages like Politics, Cambodia.
-                      These list REAL news articles. Recommended.
-  --source sitemap    read the sitemaps. Some batches are mostly radio
-                      programs (skipped), so you get fewer real articles.
-
-Run:
-  python voa_khmer_scraper.py --max 30
-  python voa_khmer_scraper.py --max 300 --source category
-"""
+from __future__ import annotations
 
 import argparse
 import gzip
 import json
+import os
 import re
 import time
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone
+from pathlib import Path
+from urllib.parse import urljoin, urlparse
+from urllib.robotparser import RobotFileParser
 
 import requests
 from bs4 import BeautifulSoup
 
-# ---- EDIT THIS: a real contact email so VOA can reach your team ----
-CONTACT_EMAIL = "bornsothearith@gmail.com"
+
+BASE = "https://khmer.voanews.com"
+SITEMAP_INDEX = f"{BASE}/sitemap.xml"
+DEFAULT_OUT = Path("data/raw/voa_khmer/voa_khmer.jsonl")
+CONTACT_EMAIL = os.getenv("KHMERANNOTATE_CONTACT_EMAIL", "bornsothearith@gmail.com")
 USER_AGENT = f"KhmerAnnotate-CADT-Capstone/1.0 (research; {CONTACT_EMAIL})"
 
-DELAY = 3  # seconds between requests. Be polite.
-BASE = "https://khmer.voanews.com"
-
-# Category (zone) pages that list real articles. Add/remove as you like.
 CATEGORY_PAGES = [
     "/z/2277",  # Cambodia
     "/z/2278",  # Politics
@@ -45,176 +46,321 @@ CATEGORY_PAGES = [
     "/z/2886",  # Southeast Asia
 ]
 
-SITEMAP_INDEX = f"{BASE}/sitemap.xml"
-WANTED_SITEMAPS = ("sitemap_422_1", "sitemap_422_2", "sitemap_422_3",
-                   "sitemap_422_4", "sitemap_422_news")
-
-# Real article links look like /a/<words>/<number>.html  OR  /a/<number>.html
-ARTICLE_RE = re.compile(r"/a/(?:[\w\-]+/)?\d+\.html$")
-
-# Wire services we must NOT keep (not public domain).
-WIRE_WORDS = ("Associated Press", "Reuters", "Agence France-Presse", "AFP",
-              " via AP", "(AP)", "\u179a\u17c9\u1799\u1791\u17d0\u179a")
-
-NS = {
-    "sm": "http://www.sitemaps.org/schemas/sitemap/0.9",
-    "news": "http://www.google.com/schemas/sitemap-news/0.9",
-}
-
-session = requests.Session()
-session.headers.update({"User-Agent": USER_AGENT})
+ARTICLE_RE = re.compile(r"^/a/(?:[\w-]+/)?\d+\.html$")
+WIRE_WORDS = (
+    "associated press",
+    "reuters",
+    "agence france-presse",
+    "afp",
+    " via ap",
+    "(ap)",
+    "រ៉យទ័រ",
+)
 
 
-def get(url):
-    for _ in range(2):
+def make_session() -> requests.Session:
+    session = requests.Session()
+    session.headers.update({"User-Agent": USER_AGENT})
+    return session
+
+
+def get(
+    session: requests.Session,
+    url: str,
+    *,
+    delay: float,
+    attempts: int = 2,
+) -> requests.Response | None:
+    """Download a URL with a bounded retry count."""
+    for attempt in range(1, attempts + 1):
         try:
-            r = session.get(url, timeout=30)
-            r.raise_for_status()
-            return r
-        except Exception as e:
-            print(f"  ! {url} failed ({e})")
-            time.sleep(DELAY)
+            response = session.get(url, timeout=30)
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            print(f"  ! attempt {attempt}/{attempts} failed for {url}: {exc}")
+            if attempt < attempts:
+                time.sleep(delay)
     return None
 
 
-def links_from_category(path):
-    """Collect article links from one category page."""
-    r = get(BASE + path)
-    if not r:
+def load_robots(session: requests.Session) -> RobotFileParser:
+    """Fetch VOA's robots.txt and fail closed if it cannot be read."""
+    robots_url = f"{BASE}/robots.txt"
+    response = session.get(robots_url, timeout=30)
+    response.raise_for_status()
+    parser = RobotFileParser()
+    parser.set_url(robots_url)
+    parser.parse(response.text.splitlines())
+    return parser
+
+
+def is_article_url(url: str) -> bool:
+    parsed = urlparse(urljoin(BASE, url))
+    return parsed.netloc == urlparse(BASE).netloc and bool(ARTICLE_RE.match(parsed.path))
+
+
+def is_likely_text_url(url: str) -> bool:
+    """Slugged VOA URLs are much more often full text than numeric-only URLs."""
+    return bool(re.match(r"^/a/[\w-]+/\d+\.html$", urlparse(url).path))
+
+
+def links_from_category(
+    session: requests.Session,
+    robots: RobotFileParser,
+    path: str,
+    *,
+    delay: float,
+) -> list[str]:
+    """Collect article links from one VOA category page."""
+    url = urljoin(BASE, path)
+    if not robots.can_fetch(USER_AGENT, url):
+        print(f"  ! robots.txt disallows {url}")
         return []
-    soup = BeautifulSoup(r.content, "html.parser")
-    found = []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if ARTICLE_RE.search(href):
-            full = href if href.startswith("http") else BASE + href
+    response = get(session, url, delay=delay)
+    if response is None:
+        return []
+
+    soup = BeautifulSoup(response.content, "html.parser")
+    found: list[str] = []
+    for anchor in soup.find_all("a", href=True):
+        full = urljoin(BASE, anchor["href"])
+        if is_article_url(full):
             found.append(full)
     return found
 
 
-def links_from_sitemaps(limit):
-    r = get(SITEMAP_INDEX)
-    if not r:
-        return []
-    root = ET.fromstring(r.content)
-    subs = [loc.text.strip() for loc in root.iter("{%s}loc" % NS["sm"])
-            if any(w in loc.text for w in WANTED_SITEMAPS)]
-    found = []
-    for sm in subs:
-        r = get(sm)
-        if not r:
+def _sitemap_locations(content: bytes) -> tuple[str, list[str]]:
+    """Return (root type, locations) for plain or gzip-compressed sitemap XML."""
+    if content[:2] == b"\x1f\x8b":
+        content = gzip.decompress(content)
+    root = ET.fromstring(content)
+    root_type = root.tag.rsplit("}", 1)[-1]
+    locations: list[str] = []
+    for entry in root:
+        # Use the primary <loc> directly under <url>/<sitemap>. Nested media
+        # namespaces can contain additional URLs that are not article pages.
+        for element in entry:
+            if element.tag.rsplit("}", 1)[-1] == "loc" and element.text:
+                locations.append(element.text.strip())
+                break
+    return root_type, locations
+
+
+def links_from_sitemaps(
+    session: requests.Session,
+    robots: RobotFileParser,
+    limit: int,
+    *,
+    delay: float,
+    max_sitemaps: int = 100,
+) -> list[str]:
+    """Walk VOA sitemap indexes until enough article candidates are found."""
+    queue = [SITEMAP_INDEX]
+    visited: set[str] = set()
+    found: list[str] = []
+    target = max(limit * 10, 100)
+
+    while queue and len(visited) < max_sitemaps and len(found) < target:
+        sitemap_url = queue.pop(0)
+        if sitemap_url in visited:
+            continue
+        visited.add(sitemap_url)
+        if not robots.can_fetch(USER_AGENT, sitemap_url):
+            print(f"  ! robots.txt disallows {sitemap_url}")
+            continue
+        response = get(session, sitemap_url, delay=delay)
+        if response is None:
             continue
         try:
-            data = gzip.decompress(r.content)
-        except OSError:
-            data = r.content
-        try:
-            root = ET.fromstring(data)
-        except ET.ParseError:
+            root_type, locations = _sitemap_locations(response.content)
+        except (ET.ParseError, OSError) as exc:
+            print(f"  ! invalid sitemap {sitemap_url}: {exc}")
             continue
-        for loc in root.iter("{%s}loc" % NS["sm"]):
-            if loc.text and ARTICLE_RE.search(loc.text):
-                found.append(loc.text.strip())
-        time.sleep(DELAY)
-        if len(found) >= limit * 4:
-            break
+
+        if root_type == "sitemapindex":
+            def sitemap_priority(item: str) -> tuple[int, str]:
+                name = item.lower()
+                # VOA's 422 batches contain Khmer service pages. The generic
+                # news sitemap is largely radio/program pages without text.
+                if "sitemap_422_" in name and "news" not in name:
+                    return (0, item)
+                if "sitemap_422_news" in name:
+                    return (1, item)
+                return (2, item)
+
+            locations.sort(key=sitemap_priority)
+            queue.extend(location for location in locations if location not in visited)
+        else:
+            article_locations = [
+                location for location in locations if is_article_url(location)
+            ]
+            article_locations.sort(key=lambda item: not is_likely_text_url(item))
+            found.extend(article_locations[: target - len(found)])
+        time.sleep(delay)
+
     return found
 
 
-def scrape_article(url):
-    """Return a dict for one article, or None to skip it."""
-    r = get(url)
-    if not r:
-        return None
-    soup = BeautifulSoup(r.content, "html.parser")
+def _meta_content(soup: BeautifulSoup, *names: str) -> str:
+    wanted = {name.casefold() for name in names}
+    for meta in soup.find_all("meta"):
+        key = (meta.get("name") or meta.get("property") or "").casefold()
+        if key in wanted and meta.get("content"):
+            return meta["content"].strip()
+    return ""
 
-    # Body: <div id="article-content"> ... <div class="wsw"> paragraphs
+
+def extract_article(html: bytes | str, url: str) -> tuple[dict | None, str]:
+    """Extract one VOA article, returning (record, skip reason)."""
+    soup = BeautifulSoup(html, "html.parser")
     body = soup.find("div", id="article-content")
-    if not body:
-        return None
-    wsw = body.find("div", class_="wsw") or body
-    paragraphs = [p.get_text(strip=True) for p in wsw.find_all("p")]
-    text = "\n".join(p for p in paragraphs if p)
-    if len(text) < 100:  # radio/video pages have almost no text
-        return None
+    if body is None:
+        return None, "no article body"
 
-    # Wire check: skip AP/Reuters/AFP content
-    if any(w in soup.get_text() for w in WIRE_WORDS):
-        return None
+    content = body.find("div", class_="wsw") or body
+    paragraphs = [p.get_text(" ", strip=True) for p in content.find_all("p")]
+    paragraphs = [paragraph for paragraph in paragraphs if paragraph]
+    text = "\n".join(paragraphs)
+    if len(text) < 100:
+        return None, "article text is too short"
 
-    # Title: <h1 class="title">
-    h1 = soup.find("h1")
-    title = h1.get_text(strip=True) if h1 else ""
+    author = _meta_content(soup, "author")
+    wire_haystack = f"{author}\n{text[:1000]}".casefold()
+    if any(word in wire_haystack for word in WIRE_WORDS):
+        return None, "possible AP/Reuters/AFP wire content"
 
-    # Author: <meta name="Author" content="...">
-    author = ""
-    m = soup.find("meta", attrs={"name": "Author"})
-    if m and m.get("content"):
-        author = m["content"].strip()
+    heading = soup.find("h1")
+    title = heading.get_text(" ", strip=True) if heading else ""
+    if not title:
+        title = _meta_content(soup, "og:title", "twitter:title")
 
-    # Date: <time datetime="...">
-    date = ""
-    t = soup.find("time")
-    if t and t.get("datetime"):
-        date = t["datetime"].strip()
+    publication_date = ""
+    time_element = soup.find("time", datetime=True)
+    if time_element:
+        publication_date = time_element["datetime"].strip()
+    if not publication_date:
+        publication_date = _meta_content(
+            soup, "article:published_time", "date", "datepublished"
+        )
 
-    return {
-        "url": url,
-        "title": title,
-        "text": text,
-        "author": author,
-        "publication_date": date,
-        "source": "VOA Khmer",
-        "licence": "Public domain (US Government / VOA) - verify not wire",
-        "access_date": datetime.utcnow().strftime("%Y-%m-%d"),
-    }
+    match = re.search(r"/(\d+)\.html$", urlparse(url).path)
+    article_id = match.group(1) if match else ""
+    return (
+        {
+            "source": "VOA Khmer",
+            "id": article_id,
+            "url": url,
+            "title": title,
+            "text": text,
+            "paragraphs": paragraphs,
+            "author": author,
+            "publication_date": publication_date,
+            "licence": "Public domain only when produced exclusively by VOA; wire content excluded",
+            "access_date": datetime.now(timezone.utc).date().isoformat(),
+        },
+        "",
+    )
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--max", type=int, default=30)
-    ap.add_argument("--source", choices=["category", "sitemap"],
-                    default="category")
-    ap.add_argument("--out", default="data/raw/voa_khmer/voa_khmer.jsonl")
-    args = ap.parse_args()
+def scrape_article(
+    session: requests.Session,
+    robots: RobotFileParser,
+    url: str,
+    *,
+    delay: float,
+) -> tuple[dict | None, str]:
+    if not robots.can_fetch(USER_AGENT, url):
+        return None, "disallowed by robots.txt"
+    response = get(session, url, delay=delay)
+    if response is None:
+        return None, "download failed"
+    return extract_article(response.content, url)
 
-    # Collect candidate links
-    print(f"Collecting article links (source={args.source})...")
-    candidates = []
+
+def existing_urls(path: Path) -> set[str]:
+    if not path.exists():
+        return set()
+    urls: set[str] = set()
+    with path.open(encoding="utf-8") as stream:
+        for line_number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                url = json.loads(line).get("url")
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"Invalid JSON on {path}:{line_number}") from exc
+            if url:
+                urls.add(url)
+    return urls
+
+
+def unique_in_order(items: list[str]) -> list[str]:
+    return list(dict.fromkeys(items))
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--max", "--max-articles", dest="max_articles", type=int, default=50)
+    parser.add_argument("--source", choices=("category", "sitemap"), default="category")
+    parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    parser.add_argument("--delay", type=float, default=3.0)
+    parser.add_argument("--overwrite", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    if args.max_articles < 1:
+        raise SystemExit("--max must be at least 1")
+    if args.delay < 0:
+        raise SystemExit("--delay cannot be negative")
+
+    session = make_session()
+    try:
+        robots = load_robots(session)
+    except requests.RequestException as exc:
+        raise SystemExit(f"Could not read VOA robots.txt; stopping safely: {exc}") from exc
+
+    print(f"Collecting VOA links (source={args.source})...")
     if args.source == "category":
+        candidates: list[str] = []
         for path in CATEGORY_PAGES:
             print(f"  category {path}")
-            candidates.extend(links_from_category(path))
-            time.sleep(DELAY)
-            if len(candidates) >= args.max * 3:
-                break
+            candidates.extend(
+                links_from_category(session, robots, path, delay=args.delay)
+            )
+            time.sleep(args.delay)
     else:
-        candidates = links_from_sitemaps(args.max)
+        candidates = links_from_sitemaps(
+            session, robots, args.max_articles, delay=args.delay
+        )
 
-    # De-duplicate, keep order
-    seen, unique = set(), []
-    for link in candidates:
-        if link not in seen:
-            seen.add(link)
-            unique.append(link)
+    candidates = unique_in_order(candidates)
+    already_saved = set() if args.overwrite else existing_urls(args.out)
+    candidates = [url for url in candidates if url not in already_saved]
+    print(f"Found {len(candidates)} new unique candidate links.")
 
-    print(f"\n{len(unique)} unique links. Scraping up to {args.max}...\n")
-
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    mode = "w" if args.overwrite else "a"
     saved = 0
-    with open(args.out, "w", encoding="utf-8") as f:
-        for link in unique:
-            if saved >= args.max:
+    examined = 0
+    with args.out.open(mode, encoding="utf-8", newline="\n") as stream:
+        for url in candidates:
+            if saved >= args.max_articles:
                 break
-            print(f"[{saved+1}] {link}")
-            art = scrape_article(link)
-            time.sleep(DELAY)
-            if not art:
-                print("     skipped (short, wire, or no body)")
+            examined += 1
+            print(f"[candidate {examined}, saved {saved}/{args.max_articles}] {url}")
+            article, reason = scrape_article(session, robots, url, delay=args.delay)
+            time.sleep(args.delay)
+            if article is None:
+                print(f"  skipped: {reason}")
                 continue
-            f.write(json.dumps(art, ensure_ascii=False) + "\n")
+            stream.write(json.dumps(article, ensure_ascii=False) + "\n")
+            stream.flush()
             saved += 1
 
-    print(f"\nDone. Saved {saved} articles to {args.out}")
+    print(f"Done. Saved {saved} new articles to {args.out}")
 
 
 if __name__ == "__main__":
