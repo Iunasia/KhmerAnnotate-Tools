@@ -5,9 +5,9 @@ useful for entity coverage, while VOA supplies the project's news domain.
 
 Examples (run from the repository root):
 
-    python collector/wikipedia_khmer.py --max 1000
-    python collector/wikipedia_khmer.py --dump path/to/kmwiki.xml.bz2 --max 100
-    python collector/wikipedia_khmer.py --download-only
+    python collector/wikipedia_khmer_scraper.py --max 1000
+    python collector/wikipedia_khmer_scraper.py --dump path/to/kmwiki.xml.bz2 --max 100
+    python collector/wikipedia_khmer_scraper.py --download-only
 """
 
 from __future__ import annotations

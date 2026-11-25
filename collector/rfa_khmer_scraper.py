@@ -100,9 +100,25 @@ def _body_paragraphs(soup: BeautifulSoup, json_ld: dict[str, Any]) -> list[str]:
     return []
 
 
+def _decode_html(html: bytes | str) -> bytes | str:
+    """Decode saved HTML as UTF-8 when possible.
+
+    Without a ``<meta charset>`` tag, BeautifulSoup guesses the encoding and
+    can mistake UTF-8 Khmer for a legacy code page (e.g. ibm855). RFA Khmer
+    pages are UTF-8, so prefer that and only fall back to guessing for files
+    that are not valid UTF-8.
+    """
+    if isinstance(html, str):
+        return html
+    try:
+        return html.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return html
+
+
 def extract_article(html: bytes | str, source_file: Path) -> tuple[dict | None, str]:
     """Extract a locally saved RFA HTML page."""
-    soup = BeautifulSoup(html, "html.parser")
+    soup = BeautifulSoup(_decode_html(html), "html.parser")
     json_ld = _news_json_ld(soup)
 
     canonical = soup.find("link", rel=lambda value: value and "canonical" in value)
