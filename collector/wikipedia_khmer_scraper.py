@@ -5,9 +5,10 @@ useful for entity coverage, while VOA supplies the project's news domain.
 
 Examples (run from the repository root):
 
-    python collector/wikipedia_khmer.py --max 1000
-    python collector/wikipedia_khmer.py --dump path/to/kmwiki.xml.bz2 --max 100
-    python collector/wikipedia_khmer.py --download-only
+    python collector/wikipedia_khmer_scraper.py --max 50 --sample --seed 42
+    python collector/wikipedia_khmer_scraper.py --max 1000
+    python collector/wikipedia_khmer_scraper.py --dump path/to/kmwiki.xml.bz2 --max 100
+    python collector/wikipedia_khmer_scraper.py --download-only
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ import argparse
 import bz2
 import json
 import os
+import random
 import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
@@ -31,6 +33,14 @@ DEFAULT_DUMP = Path("data/raw/wikipedia_km/kmwiki-latest-pages-articles.xml.bz2"
 DEFAULT_OUT = Path("data/raw/wikipedia_km/wikipedia_km.jsonl")
 CONTACT_EMAIL = os.getenv("KHMERANNOTATE_CONTACT_EMAIL", "bornsothearith@gmail.com")
 USER_AGENT = f"KhmerAnnotate-CADT-Capstone/1.0 (research; {CONTACT_EMAIL})"
+KHMER_CHAR_RE = re.compile(r"[ក-៿᧠-᧿]")
+
+
+def khmer_share(text: str) -> float:
+    """Fraction of characters in ``text`` that are Khmer script."""
+    if not text:
+        return 0.0
+    return len(KHMER_CHAR_RE.findall(text)) / len(text)
 
 
 def download_dump(url: str, destination: Path) -> None:
@@ -91,9 +101,16 @@ def iter_articles(
     dump_path: Path,
     *,
     min_chars: int = 100,
+    min_khmer: float = 0.0,
+    skip_ids: set[str] | None = None,
     stripper: Callable[[str], str] = strip_wikicode,
 ) -> Iterator[dict]:
-    """Stream main-namespace, non-redirect articles without loading the dump."""
+    """Stream main-namespace, non-redirect articles without loading the dump.
+
+    Pages whose id is in ``skip_ids`` are skipped before the (slow) wikicode
+    stripping step.
+    """
+    skip_ids = skip_ids or set()
     with _open_dump(dump_path) as stream:
         for _event, page in ET.iterparse(stream, events=("end",)):
             if page.tag.rsplit("}", 1)[-1] != "page":
@@ -105,12 +122,17 @@ def iter_articles(
             redirect = page.find(f"{namespace}redirect") is not None
             revision = page.find(f"{namespace}revision")
 
-            if page_namespace == "0" and not redirect and revision is not None:
+            if (
+                page_namespace == "0"
+                and not redirect
+                and revision is not None
+                and page_id not in skip_ids
+            ):
                 timestamp = revision.findtext(f"{namespace}timestamp", default="").strip()
                 raw_text = revision.findtext(f"{namespace}text", default="") or ""
                 if raw_text and not raw_text.lstrip().casefold().startswith("#redirect"):
                     plain_text = stripper(raw_text)
-                    if len(plain_text) >= min_chars:
+                    if len(plain_text) >= min_chars and khmer_share(plain_text) >= min_khmer:
                         wiki_title = quote(title.replace(" ", "_"), safe="()/:,_-")
                         yield {
                             "source": "Khmer Wikipedia",
@@ -148,10 +170,34 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dump", type=Path, default=DEFAULT_DUMP)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--max", "--max-articles", dest="max_articles", type=int)
-    parser.add_argument("--min-chars", type=int, default=100)
+    parser.add_argument("--min-chars", type=int, default=1500,
+                        help="skip articles shorter than this after cleaning (default 1500)")
+    parser.add_argument("--min-khmer", type=float, default=0.5,
+                        help="skip articles whose text is less than this share Khmer script (default 0.5)")
+    parser.add_argument("--sample", action="store_true",
+                        help="pick --max articles at random from the whole dump instead of the first ones")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="random seed for --sample, so the same articles are picked each run")
     parser.add_argument("--download-only", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
     return parser.parse_args()
+
+
+def reservoir_sample(items: Iterator[dict], size: int, seed: int) -> list[dict]:
+    """Pick ``size`` items uniformly at random in one pass, keeping dump order."""
+    rng = random.Random(seed)
+    reservoir: list[tuple[int, dict]] = []
+    for index, item in enumerate(items):
+        if index < size:
+            reservoir.append((index, item))
+        else:
+            slot = rng.randint(0, index)
+            if slot < size:
+                reservoir[slot] = (index, item)
+        if (index + 1) % 1000 == 0:
+            print(f"  scanned {index + 1} matching articles", end="\r")
+    reservoir.sort(key=lambda pair: pair[0])
+    return [item for _index, item in reservoir]
 
 
 def main() -> None:
@@ -160,6 +206,10 @@ def main() -> None:
         raise SystemExit("--max must be at least 1")
     if args.min_chars < 1:
         raise SystemExit("--min-chars must be at least 1")
+    if not 0.0 <= args.min_khmer <= 1.0:
+        raise SystemExit("--min-khmer must be between 0 and 1")
+    if args.sample and args.max_articles is None:
+        raise SystemExit("--sample needs --max")
 
     if not args.dump.exists():
         try:
@@ -175,7 +225,16 @@ def main() -> None:
     saved = 0
     with args.out.open(mode, encoding="utf-8", newline="\n") as output:
         try:
-            articles = iter_articles(args.dump, min_chars=args.min_chars)
+            articles = iter_articles(
+                args.dump,
+                min_chars=args.min_chars,
+                min_khmer=args.min_khmer,
+                skip_ids=known,
+            )
+            if args.sample:
+                print(f"Sampling {args.max_articles} articles (seed {args.seed}); "
+                      "this reads the whole dump, about 1 minute...")
+                articles = reservoir_sample(articles, args.max_articles, args.seed)
             for article in articles:
                 if args.max_articles is not None and saved >= args.max_articles:
                     break
