@@ -16,11 +16,21 @@ raw text      Unicode      label       QA and     XLM-R NER
 | Folder | Purpose | Status |
 |---|---|---|
 | `collector/` | Collect Khmer text from VOA, Wikipedia and ODC | Ready (250 raw articles collected) |
-| `cleaner/` | Clean hidden Unicode characters and prepare sentences | Started (`clean_text.py`) |
+| `cleaner/` | Clean hidden characters, fix Khmer typing order and vowel encoding, split sentences | In progress (word splitting not done yet) |
 | `guidelines/` | Khmer annotation rulebook | Planned |
 | `checker/` | Flag annotation mistakes and measure agreement | Planned |
 | `baseline/` | Baseline XLM-RoBERTa model | Planned |
 | `data/` | Local raw and processed data (not committed) | Shared on Hugging Face |
+
+## How we annotate
+
+Each article is split into sentences, and each sentence is annotated word by
+word with `PER`, `LOC`, `ORG` or no label. Khmer is written without spaces
+between words, so the text must also be split into words before annotation.
+That step is not built yet.
+
+`CLAUDE.md` holds the current state of the project (what is done and what is
+still open) and is updated after each piece of work.
 
 ## Setup
 
@@ -252,6 +262,16 @@ The script prints how many of each fix it made.
 Each output line has `id` (`<file>-<article id>-<sentence number>`), `doc_id`,
 `sentence_index`, `text`, the article's `source`, `url`, `title`, `licence`
 and `attribution` (when present), and `changed: true`.
+
+Not done yet:
+
+- Splitting sentences into words. The zero-width spaces in ODC text mark word
+  boundaries, so use `--keep-zwsp` if you need them.
+- The output still contains some lines that are not sentences (headings, date
+  lines, "source:" captions) and some repeated sentences.
+- The subscript `ដ`/`ត` rule has not been checked against a reference yet.
+  Review it before relying on the output.
+- The cleaner has only been run on the ODC data so far.
 
 Run the tests with `python -m unittest discover -s tests -t .`.
 
