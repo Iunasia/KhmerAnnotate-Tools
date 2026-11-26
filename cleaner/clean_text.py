@@ -11,7 +11,13 @@ Cleaning steps:
    only between two Khmer characters, where they change how text is drawn.
 3. Turn unusual spaces (no-break, thin, ideographic, tabs, ...) into a
    normal space and collapse repeated spaces.
-4. Split paragraphs into sentences at ។ ៕ ៚ ? and !.
+4. Fix Khmer vowel encoding: a vowel typed as two parts (េ + ី for ើ,
+   េ + ា for ោ) becomes the single correct character, and deprecated
+   characters are replaced.
+5. Fix Khmer typing order: the marks of each syllable are put in the standard
+   order (subscripts, register shifter, vowel, final signs), so words that
+   look the same are stored the same way.
+6. Split paragraphs into sentences at ។ ៕ ៚ ? and !.
 
 Examples (run from the repository root):
 
@@ -34,27 +40,116 @@ from typing import Iterable, Iterator
 RAW_DIR = Path("data/raw")
 OUT_DIR = Path("data/processed")
 
-ZWSP = "​"
-JOINERS = "‌‍"  # zero-width non-joiner, zero-width joiner
-KHMER = "ក-៿"
+ZWSP = "\u200b"
+JOINERS = "\u200c\u200d"  # zero-width non-joiner, zero-width joiner
+KHMER = "\u1780-\u17ff"
 
 # Hidden characters that are always removed (ZWSP is handled separately).
 _HIDDEN = (
-    "­"  # soft hyphen
-    "͏"  # combining grapheme joiner
-    "؜‎‏"  # direction marks
-    "‪-‮"  # direction embeddings/overrides
-    "⁠-⁤"  # word joiner, invisible operators
-    "⁦-⁩"  # direction isolates
-    "﻿"  # byte-order mark / zero-width no-break space
-    "￹-￻"  # interlinear annotation marks
+    "\u00ad"  # soft hyphen
+    "\u034f"  # combining grapheme joiner
+    "\u061c\u200e\u200f"  # direction marks
+    "\u17b4\u17b5"  # Khmer invisible inherent vowels
+    "\u202a-\u202e"  # direction embeddings/overrides
+    "\u2060-\u2064"  # word joiner, invisible operators
+    "\u2066-\u2069"  # direction isolates
+    "\ufeff"  # byte-order mark / zero-width no-break space
+    "\ufff9-\ufffb"  # interlinear annotation marks
 )
 _HIDDEN_RE = re.compile(f"[{_HIDDEN}]")
 _CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
 _STRAY_JOINER_RE = re.compile(f"(?<![{KHMER}])[{JOINERS}]|[{JOINERS}](?![{KHMER}])")
-_SPACE_RE = re.compile("[\t   -   　]")
-_NEWLINE_RE = re.compile("\r\n?|[  \u0085]")
+_SPACE_RE = re.compile("[\t\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000]")
+_NEWLINE_RE = re.compile("\r\n?|[\u2028\u2029\u0085]")
 _KHMER_RE = re.compile(f"[{KHMER}]")
+
+# Deprecated Khmer characters and what Unicode says to use instead.
+_DEPRECATED = {
+    "\u17a3": "\u17a2",  # ឣ -> អ
+    "\u17a4": "\u17a2\u17b6",  # ឤ -> អា
+    "\u17a8": "\u17a7\u1780",  # ឨ -> ឧក
+    "\u17d8": "\u17d4\u179b\u17d4",  # ៘ -> ។ល។
+}
+_DEPRECATED_RE = re.compile("[" + "".join(_DEPRECATED) + "]")
+
+_BASE = "\u1780-\u17b3"  # consonants and independent vowels
+COENG = "\u17d2"  # subscript sign
+_MARK = "\u17b6-\u17d1\u17dd"  # dependent vowels and signs
+# One syllable: a base character followed by subscripts, marks and joiners.
+_CLUSTER_RE = re.compile(f"[{_BASE}](?:{COENG}[{_BASE}]|[{_MARK}{JOINERS}])+")
+_UNIT_RE = re.compile(f"{COENG}.|.", re.S)
+# Two-part vowels (after ordering, េ comes first; a below-vowel may sit between).
+_SPLIT_VOWELS = (
+    (re.compile("\u17c1([\u17bb-\u17bd]?)\u17b8"), "\u17be\\1"),  # េ + ី -> ើ
+    (re.compile("\u17c1([\u17bb-\u17bd]?)\u17b6"), "\u17c4\\1"),  # េ + ា -> ោ
+)
+
+
+def _unit_order(unit: str) -> float:
+    """Position of one part of a syllable in the standard typing order."""
+    if unit[0] == COENG:
+        return 2.5 if unit[1] == "\u179a" else 2  # subscript រ goes last
+    code = ord(unit)
+    if code == 0x17CC:  # robat
+        return 1
+    if code in (0x17C9, 0x17CA):  # register shifters
+        return 3
+    if unit in JOINERS:
+        return 4
+    if 0x17C1 <= code <= 0x17C3:  # vowels written before the consonant
+        return 5
+    if 0x17BB <= code <= 0x17BD:  # vowels below
+        return 5.1
+    if 0x17B7 <= code <= 0x17BA:  # vowels above
+        return 5.2
+    if code <= 0x17C5:  # remaining vowels
+        return 5.3
+    if code in (0x17C7, 0x17C8):  # final signs ះ ៈ
+        return 7
+    return 6  # other signs (ំ ់ ៍ ...)
+
+
+def normalise_khmer(text: str, counts: Counter | None = None) -> str:
+    """Fix Khmer vowel encoding and typing order. Visible text is unchanged."""
+
+    def count(key: str, number: int = 1) -> None:
+        if counts is not None and number:
+            counts[key] += number
+
+    def deprecated(match: re.Match) -> str:
+        count("deprecated-character")
+        return _DEPRECATED[match.group()]
+
+    text = _DEPRECATED_RE.sub(deprecated, text)
+    text, number = re.subn(f"{COENG}{{2,}}", COENG, text)
+    count("repeated-mark", number)
+    # Subscript ដ and subscript ត look identical; store ត, except after ណ.
+    text, number = re.subn(f"(?<!\u178e){COENG}\u178a", f"{COENG}\u178f", text)
+    text, number2 = re.subn(f"(?<=\u178e){COENG}\u178f", f"{COENG}\u178a", text)
+    count("subscript-da-ta", number + number2)
+
+    def cluster(match: re.Match) -> str:
+        original = match.group()
+        units = _UNIT_RE.findall(original[1:])
+        ordered = sorted(units, key=_unit_order)  # stable: ties keep their order
+        if ordered != units:
+            count("typing-order")
+        kept = []
+        for unit in ordered:
+            # The same mark twice in a row is invisible; េេ is left alone
+            # because it is visible.
+            if kept and kept[-1] == unit and unit != "\u17c1":
+                count("repeated-mark")
+                continue
+            kept.append(unit)
+        marks = "".join(kept)
+        for pattern, replacement in _SPLIT_VOWELS:
+            marks, number = pattern.subn(replacement, marks)
+            count("vowel-encoding", number)
+        return original[0] + marks
+
+    return _CLUSTER_RE.sub(cluster, text)
+
 
 _END = "។៕៚?!"
 _CLOSERS = "”\"’'»)\\]"
@@ -95,6 +190,7 @@ def clean_text(text: str, keep_zwsp: bool = False, counts: Counter | None = None
         if counts is not None:
             counts[ZWSP] += text.count(ZWSP)
         text = text.replace(ZWSP, "")
+    text = normalise_khmer(text, counts)
     # Run until stable: removing one stray joiner can expose another.
     while _STRAY_JOINER_RE.search(text):
         text = _STRAY_JOINER_RE.sub(drop, text)
@@ -196,6 +292,14 @@ def describe(counts: Counter) -> str:
     ]
     if removed:
         parts.append("characters removed/replaced: " + ", ".join(removed))
+    fixes = [
+        f"{key} x{counts[key]}"
+        for key in ("typing-order", "vowel-encoding", "subscript-da-ta",
+                    "repeated-mark", "deprecated-character")
+        if counts[key]
+    ]
+    if fixes:
+        parts.append("Khmer fixes: " + ", ".join(fixes))
     return "; ".join(parts)
 
 

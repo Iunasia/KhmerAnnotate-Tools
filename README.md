@@ -234,10 +234,20 @@ What it does:
    how the text is drawn.
 3. Turns unusual spaces (no-break, thin, tabs, ...) into a normal space and
    collapses repeated spaces.
-4. Splits each paragraph into sentences at `។`, `៕`, `៚`, `?` and `!`. The
+4. Fixes Khmer vowel encoding: a vowel typed as two parts (`េ` + `ី` for
+   `ើ`, `េ` + `ា` for `ោ`) becomes the single correct character, and
+   deprecated characters are replaced.
+5. Fixes Khmer typing order: the marks of each syllable are put in the
+   standard order (subscripts, register shifter, vowel, final signs), and a
+   mark typed twice in a row is kept once. Subscript `ដ` and subscript `ត`
+   look identical, so they are stored as `្ត`, except after `ណ` (`ណ្ដ`).
+   After this, words that look the same are stored the same way.
+6. Splits each paragraph into sentences at `។`, `៕`, `៚`, `?` and `!`. The
    abbreviation `។ល។` and Latin full stops do not end a sentence.
-5. Drops sentences with fewer than 10 Khmer characters (`--min-khmer`), such
+7. Drops sentences with fewer than 10 Khmer characters (`--min-khmer`), such
    as English-only lines.
+
+The script prints how many of each fix it made.
 
 Each output line has `id` (`<file>-<article id>-<sentence number>`), `doc_id`,
 `sentence_index`, `text`, the article's `source`, `url`, `title`, `licence`
