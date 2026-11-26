@@ -16,7 +16,7 @@ raw text      Unicode      label       QA and     XLM-R NER
 | Folder | Purpose | Status |
 |---|---|---|
 | `collector/` | Collect Khmer text from VOA, Wikipedia and ODC | Ready (250 raw articles collected) |
-| `cleaner/` | Clean hidden Unicode characters and prepare sentences | Planned |
+| `cleaner/` | Clean hidden Unicode characters and prepare sentences | Started (`clean_text.py`) |
 | `guidelines/` | Khmer annotation rulebook | Planned |
 | `checker/` | Flag annotation mistakes and measure agreement | Planned |
 | `baseline/` | Baseline XLM-RoBERTa model | Planned |
@@ -205,6 +205,45 @@ ODC's terms also ask for the specific page title and link. Each record's
 `"ជីវៈចម្រុះ" (https://opendevelopmentcambodia.net/km/topics/biodiversity/) by
 Open Development Cambodia (ODC), licensed under CC BY-SA 4.0`. Because of
 ShareAlike, data derived from ODC text must also be released under CC BY-SA 4.0.
+
+## Clean the text and split it into sentences
+
+`cleaner/clean_text.py` reads the raw article files and writes one sentence
+per line, ready for annotation.
+
+```bash
+# Clean every data/raw/*/*.jsonl file
+python cleaner/clean_text.py
+
+# Clean one file
+python cleaner/clean_text.py --input data/raw/voa_khmer/voa_khmer.jsonl
+
+# Keep zero-width spaces as word-boundary hints
+python cleaner/clean_text.py --keep-zwsp
+```
+
+Output: `data/processed/<name>_sentences.jsonl`, for example
+`data/processed/odc_km_sentences.jsonl`.
+
+What it does:
+
+1. Applies Unicode NFC normalisation.
+2. Removes hidden characters: zero-width spaces, byte-order marks, soft
+   hyphens, direction marks and control characters. Zero-width joiners and
+   non-joiners are kept only between two Khmer characters, where they change
+   how the text is drawn.
+3. Turns unusual spaces (no-break, thin, tabs, ...) into a normal space and
+   collapses repeated spaces.
+4. Splits each paragraph into sentences at `។`, `៕`, `៚`, `?` and `!`. The
+   abbreviation `។ល។` and Latin full stops do not end a sentence.
+5. Drops sentences with fewer than 10 Khmer characters (`--min-khmer`), such
+   as English-only lines.
+
+Each output line has `id` (`<file>-<article id>-<sentence number>`), `doc_id`,
+`sentence_index`, `text`, the article's `source`, `url`, `title`, `licence`
+and `attribution` (when present), and `changed: true`.
+
+Run the tests with `python -m unittest discover -s tests -t .`.
 
 ## JSONL format
 
