@@ -146,9 +146,7 @@ Each line is one UTF-8 JSON object. Core fields are:
 }
 ```
 
-Source-specific records may also contain `paragraphs` or `author`. The first
-22 VOA records were saved by an earlier scraper version and have no `id` or
-`paragraphs` field.
+Source-specific records may also contain `paragraphs` or `author`.
 
 ## Licence
 
