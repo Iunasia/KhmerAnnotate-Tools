@@ -15,7 +15,7 @@ raw text      Unicode      label       QA and     XLM-R NER
 
 | Folder | Purpose | Status |
 |---|---|---|
-| `collector/` | Collect Khmer text from VOA and Wikipedia; import authorised RFA HTML | Ready |
+| `collector/` | Collect Khmer text from VOA and Wikipedia | Ready |
 | `cleaner/` | Clean hidden Unicode characters and prepare sentences | Planned |
 | `guidelines/` | Khmer annotation rulebook | Planned |
 | `checker/` | Flag annotation mistakes and measure agreement | Planned |
@@ -85,21 +85,6 @@ Output: `data/raw/wikipedia_km/wikipedia_km.jsonl`
 Wikipedia is encyclopaedic text, not news. Keep its URL/title attribution and
 follow its CC BY-SA/GFDL requirements when releasing derived data.
 
-## Import authorised RFA Khmer HTML
-
-RFA's Terms of Use prohibit automated robots/scripts from accessing or copying
-the website. For that reason, `rfa_khmer_scraper.py` deliberately performs no
-network requests. It only parses local HTML that the team has permission to use.
-
-```bash
-python collector/rfa_khmer_scraper.py --input path/to/authorised_html --max 100
-```
-
-Output: `data/raw/rfa_khmer/rfa_khmer.jsonl`
-
-Get written permission from RFA before automated collection or dataset release,
-and keep the required attribution stored in each record.
-
 ## JSONL format
 
 Each line is one UTF-8 JSON object. Core fields are:
@@ -117,8 +102,7 @@ Each line is one UTF-8 JSON object. Core fields are:
 }
 ```
 
-Source-specific records may also contain `paragraphs`, `author`, or
-`local_source_file`.
+Source-specific records may also contain `paragraphs` or `author`.
 
 ## Licence
 
