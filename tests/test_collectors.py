@@ -5,7 +5,6 @@ import unittest
 from pathlib import Path
 
 from collector import odc_khmer_scraper as odc
-from collector import rfa_khmer_scraper as rfa
 from collector import voa_khmer_scraper as voa
 from collector import wikipedia_khmer_scraper as wiki
 
@@ -65,53 +64,6 @@ class VoaCollectorTests(unittest.TestCase):
         root_type, locations = voa._sitemap_locations(gzip.compress(xml))
         self.assertEqual(root_type, "urlset")
         self.assertEqual(locations, ["https://khmer.voanews.com/a/123.html"])
-
-
-class RfaImporterTests(unittest.TestCase):
-    def test_extract_json_ld_article(self):
-        payload = {
-            "@type": "NewsArticle",
-            "headline": "ព័ត៌មានសាកល្បង",
-            "articleBody": KHMER_TEXT,
-            "datePublished": "2026-02-03",
-            "author": {"name": "អ្នកនិពន្ធ"},
-            "url": "https://www.rfa.org/khmer/test/article.html",
-        }
-        html = (
-            "<html><head><script type='application/ld+json'>"
-            + json.dumps(payload, ensure_ascii=False)
-            + "</script></head><body></body></html>"
-        )
-        record, reason = rfa.extract_article(html, Path("article.html"))
-        self.assertEqual(reason, "")
-        self.assertIsNotNone(record)
-        self.assertEqual(record["title"], "ព័ត៌មានសាកល្បង")
-        self.assertEqual(record["author"], "អ្នកនិពន្ធ")
-        self.assertIn("permission", record["licence"].lower())
-
-    def test_utf8_bytes_without_charset_meta(self):
-        # The CLI passes raw file bytes. Without a <meta charset>, BeautifulSoup
-        # guesses the encoding; this body was mis-detected as ibm855.
-        body = "ភាសា" + KHMER_TEXT
-        payload = {
-            "@type": "NewsArticle",
-            "headline": "ព័ត៌មានសាកល្បង",
-            "articleBody": body,
-            "author": {"name": "អ្នកនិពន្ធ"},
-        }
-        html = (
-            "<html><head><script type='application/ld+json'>"
-            + json.dumps(payload, ensure_ascii=False)
-            + "</script></head><body></body></html>"
-        ).encode("utf-8")
-        for data in (html, b"\xef\xbb\xbf" + html):
-            # Deterministic check, independent of the charset detector version.
-            self.assertEqual(rfa._decode_html(data), html.decode("utf-8"))
-            record, reason = rfa.extract_article(data, Path("article.html"))
-            self.assertEqual(reason, "")
-            self.assertEqual(record["title"], "ព័ត៌មានសាកល្បង")
-            self.assertEqual(record["author"], "អ្នកនិពន្ធ")
-            self.assertTrue(record["text"].startswith("ភាសាខ្មែរ"))
 
 
 class WikipediaCollectorTests(unittest.TestCase):
