@@ -30,7 +30,7 @@ See `README.md` for usage of each script.
 
 ## Current state (update this section after each piece of work)
 
-Last updated: 2026-11-26
+Last updated: 2026-11-27
 
 Done:
 - Collectors for VOA, Wikipedia (with `--sample`/`--seed` and filters) and ODC.
@@ -39,10 +39,21 @@ Done:
   subscript ដ/ត one way (`្ត`, except `្ដ` after `ណ`), splits sentences at
   `។ ៕ ៚ ? !`, drops sentences with fewer than 10 Khmer characters.
 - Tests: `tests/test_collectors.py`, `tests/test_cleaner.py` (27 tests pass).
-- Cleaner run on ODC only: 238 articles -> 10,351 sentences.
+- Cleaner run on all three sources (output in `data/processed/`):
+  ODC 238 articles -> 10,351 sentences; VOA 200 -> 3,055; Wikipedia 50 -> 1,968.
+  Total 488 articles -> 15,374 sentences.
+- `huggingface_hub` installed in the venv; VOA and Wikipedia raw files
+  downloaded from the Hugging Face dataset into `data/raw/`.
+- ODC blog inspected (5 posts): report in
+  `data/processed/odc_blog_inspection.html`. Posts live at `/km/<slug>/`,
+  not under `/km/blog/`; about 335 posts.
 
 Open:
-- Cleaner not yet run on VOA or Wikipedia data (not downloaded on this machine).
+- ODC blog collector (`--include-blog`): proposal for skip rules is waiting
+  for the team's OK; no code written yet.
+- The Hugging Face dataset holds VOA and Wikipedia only; ODC raw data is not
+  uploaded there.
+- Wikipedia: 236 short sentences dropped by the cleaner (not yet looked at).
 - The subscript ដ/ត rule was written from memory of SIL's `khnormal` and is
   unverified; it rewrites ODC's usual `ណ្ត` spelling (1,401 changes). The team
   must decide whether to keep it.
