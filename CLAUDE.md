@@ -56,8 +56,13 @@ Done:
   categorisation, UTF-8 HTML error report, 300-DPI evaluation charts, and CLIs
   (`train_xlmr.py`, `evaluate.py`, `predict.py`) with `baseline/requirements-baseline.txt`
   and `baseline/README.md` (ready to train on GPU once annotated data exists).
+- `dashboard/`: Shared Streamlit + Neon PostgreSQL quality & training tracker
+  (`schema.sql`, `db.py` with Neon SSL + local SQLite fallback, `sync.py` CLI
+  to push `checker/` and `baseline/` JSON reports from local or Colab, and
+  6-tab `app.py` with Expected-vs-Actual scorecard and drag-and-drop JSON upload).
 - Tests: `tests/test_collectors.py`, `tests/test_cleaner.py`,
-  `tests/test_segmenter.py`, `tests/test_checker.py`, `tests/test_baseline.py`.
+  `tests/test_segmenter.py`, `tests/test_checker.py`, `tests/test_baseline.py`,
+  `tests/test_dashboard.py`.
 - Cleaner run on all three sources (output in `data/processed/`):
   ODC 238 articles -> 10,351 sentences; VOA 200 -> 3,055; Wikipedia 50 -> 1,968.
   Total 488 articles -> 15,374 sentences.

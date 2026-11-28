@@ -20,6 +20,7 @@ raw text      Unicode      label       QA and     XLM-R NER
 | `guidelines/` | Khmer NER annotation rulebook and local Docker INCEpTION setup | Ready |
 | `checker/` | Measure IAA (`agreement.py`), flag label errors (`label_checker.py`), build leak-free splits (`prepare_splits.py`) | Ready |
 | `baseline/` | Baseline XLM-RoBERTa NER model (CoNLL-2002 train, eval, charts, HTML report) | Ready (waiting for annotated data) |
+| `dashboard/` | Shared Streamlit + Neon PostgreSQL quality & training tracker (`app.py`, `sync.py`, `schema.sql`) | Ready |
 | `data/` | Local raw and processed data (not committed) | Shared on Hugging Face |
 
 ## How we annotate

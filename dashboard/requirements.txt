@@ -1,0 +1,4 @@
+# Dependencies for deploying dashboard/app.py on Streamlit Community Cloud + Neon PostgreSQL
+streamlit>=1.38,<2
+pandas>=2.2
+psycopg[binary]>=3.2
