@@ -1,0 +1,63 @@
+# Local INCEpTION + MariaDB setup for KhmerAnnotate (Stage 3).
+#
+# Quick start (from repository root):
+#   docker compose -f guidelines/inception/docker-compose.yml up -d
+#   Open http://localhost:8080  (default login: admin / admin)
+
+networks:
+  inception-net:
+    driver: bridge
+
+services:
+  db:
+    image: mariadb:11.4
+    container_name: khmerannotate-tools-inception-db
+    environment:
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+      MARIADB_DATABASE: ${INCEPTION_DB_NAME:-inception}
+      MARIADB_USER: ${INCEPTION_DB_USER:-inception}
+      MARIADB_PASSWORD: ${INCEPTION_DB_PASSWORD:-inception_local_dev}
+      MARIADB_AUTO_UPGRADE: "1"
+    command:
+      - "--character-set-server=utf8mb4"
+      - "--collation-server=utf8mb4_bin"
+    volumes:
+      - ./db_data:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "mariadb-admin",
+          "ping",
+          "-h",
+          "localhost",
+          "-u${INCEPTION_DB_USER:-inception}",
+          "-p${INCEPTION_DB_PASSWORD:-inception_local_dev}",
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+    networks:
+      - inception-net
+    restart: unless-stopped
+
+  inception:
+    image: ghcr.io/inception-project/inception:latest
+    container_name: khmerannotate-tools-inception-app
+    ports:
+      - "${INCEPTION_PORT:-8080}:8080"
+    environment:
+      JAVA_OPTS: "-Xms512m -Xmx2048m"
+      INCEPTION_DB_DIALECT: org.hibernate.dialect.MariaDBDialect
+      INCEPTION_DB_URL: jdbc:mariadb://db:3306/${INCEPTION_DB_NAME:-inception}?useSSL=false&useUnicode=true&characterEncoding=UTF-8
+      INCEPTION_DB_USERNAME: ${INCEPTION_DB_USER:-inception}
+      INCEPTION_DB_PASSWORD: ${INCEPTION_DB_PASSWORD:-inception_local_dev}
+    volumes:
+      - ./data:/export
+      - ./settings.properties:/export/settings.properties:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - inception-net
+    restart: unless-stopped

@@ -154,9 +154,9 @@ def normalise_khmer(text: str, counts: Counter | None = None) -> str:
 _END = "។៕៚?!"
 _CLOSERS = "”\"’'»)\\]"
 # A sentence is text up to and including its end marks and any closing quote
-# or bracket. "។ល។" (the Khmer "etc.") is not treated as a sentence end.
+# or bracket. "។ល។" (and spaced variants like "។ ល។") is not treated as a sentence end.
 _SENTENCE_RE = re.compile(
-    f"(?:។ល។|[^{_END}])+(?:[{_END}]+[{_CLOSERS}]*)?|[{_END}]+[{_CLOSERS}]*"
+    f"(?:។\\s*ល\\s*។|[^{_END}])+(?:[{_END}]+[{_CLOSERS}]*)?|[{_END}]+[{_CLOSERS}]*"
 )
 
 

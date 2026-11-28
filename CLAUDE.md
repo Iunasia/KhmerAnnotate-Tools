@@ -37,13 +37,27 @@ Done:
 - `cleaner/clean_text.py`: removes hidden characters, normalises spaces,
   fixes Khmer typing order and vowel encoding, removes repeated marks, stores
   subscript ដ/ត one way (`្ត`, except `្ដ` after `ណ`), splits sentences at
-  `។ ៕ ៚ ? !`, drops sentences with fewer than 10 Khmer characters.
+  `។ ៕ ៚ ? !` (including spaced `។ ល។`), drops sentences with fewer than 10
+  Khmer characters.
+- `cleaner/segment_words.py`: KCC-safe Khmer word segmenter (honours ZWSP hints
+  when present, guarantees 0 broken clusters), boilerplate/duplicate filtering,
+  and deterministic INCEpTION batch export (`smoke_5`, `pilot_60`, main pool,
+  and optional per-annotator batches with rotating IAA overlap).
+- `guidelines/`: Khmer NER annotation rulebook (`ANNOTATION_GUIDELINES.md`),
+  INCEpTION workflow (`ANNOTATION_WORKFLOW.md`), and local Docker Compose +
+  MariaDB `utf8mb4_bin` config (`guidelines/inception/`).
+- `checker/`: Inter-Annotator Agreement (`agreement.py` — Cohen's Kappa,
+  entity-only Kappa, span F1, UTF-8 HTML disagreement viewer), automated Khmer
+  NER QA gate (`label_checker.py` — BIO, broken clusters, punctuation,
+  honorifics, inconsistent entities), and provenance re-attacher + leak-free
+  document-grouped splitter (`prepare_splits.py`).
 - `baseline/`: CoNLL-2002 / JSONL loader, BIO validator, leak-free document
   splitter, subword-to-word alignment, exact span-level NER metrics & error
   categorisation, UTF-8 HTML error report, 300-DPI evaluation charts, and CLIs
   (`train_xlmr.py`, `evaluate.py`, `predict.py`) with `baseline/requirements-baseline.txt`
   and `baseline/README.md` (ready to train on GPU once annotated data exists).
-- Tests: `tests/test_collectors.py`, `tests/test_cleaner.py`, `tests/test_baseline.py`.
+- Tests: `tests/test_collectors.py`, `tests/test_cleaner.py`,
+  `tests/test_segmenter.py`, `tests/test_checker.py`, `tests/test_baseline.py`.
 - Cleaner run on all three sources (output in `data/processed/`):
   ODC 238 articles -> 10,351 sentences; VOA 200 -> 3,055; Wikipedia 50 -> 1,968.
   Total 488 articles -> 15,374 sentences.
@@ -62,9 +76,7 @@ Open:
 - The subscript ដ/ត rule was written from memory of SIL's `khnormal` and is
   unverified; it rewrites ODC's usual `ណ្ត` spelling (1,401 changes). The team
   must decide whether to keep it.
-- Word segmentation for word-by-word annotation (candidate: `khmer-nltk`;
-  zero-width spaces in ODC text are word boundaries and are currently removed
-  unless `--keep-zwsp` is used).
-- Output still contains headings, date lines and source captions (about 9%),
-  46 duplicate sentences and a few very long sentences.
-- The spaced `។ ល។` variant is split wrongly.
+- Human annotation in INCEpTION (pilot 60 -> 200 double-labeled IAA batch ->
+  main curated pool) and GPU fine-tuning of `baseline/train_xlmr.py`.
+- Review `cleaner/segment_words.py` output on ODC/VOA/Wikipedia (optionally
+  compare against `khmer-nltk` once installed).

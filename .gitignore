@@ -1,5 +1,7 @@
 # --- Data: scraped/raw/processed text never goes into git ---
 data/*
+guidelines/inception/data/
+guidelines/inception/db_data/
 
 # Model weights / training outputs
 *.bin

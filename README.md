@@ -15,10 +15,10 @@ raw text      Unicode      label       QA and     XLM-R NER
 
 | Folder | Purpose | Status |
 |---|---|---|
-| `collector/` | Collect Khmer text from VOA, Wikipedia and ODC | Ready (250 raw articles collected) |
-| `cleaner/` | Clean hidden characters, fix Khmer typing order and vowel encoding, split sentences | In progress (word splitting not done yet) |
-| `guidelines/` | Khmer annotation rulebook | Planned |
-| `checker/` | Flag annotation mistakes and measure agreement | Planned |
+| `collector/` | Collect Khmer text from VOA, Wikipedia and ODC | Ready (488 raw articles collected) |
+| `cleaner/` | Clean hidden characters, fix Khmer typing order/vowels, split sentences, segment words (`segment_words.py`) | Ready |
+| `guidelines/` | Khmer NER annotation rulebook and local Docker INCEpTION setup | Ready |
+| `checker/` | Measure IAA (`agreement.py`), flag label errors (`label_checker.py`), build leak-free splits (`prepare_splits.py`) | Ready |
 | `baseline/` | Baseline XLM-RoBERTa NER model (CoNLL-2002 train, eval, charts, HTML report) | Ready (waiting for annotated data) |
 | `data/` | Local raw and processed data (not committed) | Shared on Hugging Face |
 
