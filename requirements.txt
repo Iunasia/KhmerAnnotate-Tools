@@ -5,6 +5,9 @@ lxml>=5.0
 tqdm>=4.66
 mwparserfromhell>=0.6.6
 
+# dashboard (Neon PostgreSQL driver for Streamlit Cloud)
+psycopg[binary]>=3.2
+
 # baseline (install when you get to the XLM-R step)
 # torch
 # transformers>=4.40
