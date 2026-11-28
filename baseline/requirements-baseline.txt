@@ -1,0 +1,9 @@
+# ML dependencies for baseline/ (install on a GPU machine or Google Colab)
+torch>=2.2
+transformers>=4.40
+accelerate>=0.30
+sentencepiece>=0.2
+protobuf>=4.25
+numpy>=1.26
+seqeval>=1.2.2
+matplotlib>=3.8

@@ -19,7 +19,7 @@ raw text      Unicode      label       QA and     XLM-R NER
 | `cleaner/` | Clean hidden characters, fix Khmer typing order and vowel encoding, split sentences | In progress (word splitting not done yet) |
 | `guidelines/` | Khmer annotation rulebook | Planned |
 | `checker/` | Flag annotation mistakes and measure agreement | Planned |
-| `baseline/` | Baseline XLM-RoBERTa model | Planned |
+| `baseline/` | Baseline XLM-RoBERTa NER model (CoNLL-2002 train, eval, charts, HTML report) | Ready (waiting for annotated data) |
 | `data/` | Local raw and processed data (not committed) | Shared on Hugging Face |
 
 ## How we annotate

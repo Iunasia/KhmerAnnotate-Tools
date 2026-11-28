@@ -30,7 +30,7 @@ See `README.md` for usage of each script.
 
 ## Current state (update this section after each piece of work)
 
-Last updated: 2026-11-27
+Last updated: 2026-11-28
 
 Done:
 - Collectors for VOA, Wikipedia (with `--sample`/`--seed` and filters) and ODC.
@@ -38,7 +38,12 @@ Done:
   fixes Khmer typing order and vowel encoding, removes repeated marks, stores
   subscript ដ/ត one way (`្ត`, except `្ដ` after `ណ`), splits sentences at
   `។ ៕ ៚ ? !`, drops sentences with fewer than 10 Khmer characters.
-- Tests: `tests/test_collectors.py`, `tests/test_cleaner.py` (27 tests pass).
+- `baseline/`: CoNLL-2002 / JSONL loader, BIO validator, leak-free document
+  splitter, subword-to-word alignment, exact span-level NER metrics & error
+  categorisation, UTF-8 HTML error report, 300-DPI evaluation charts, and CLIs
+  (`train_xlmr.py`, `evaluate.py`, `predict.py`) with `baseline/requirements-baseline.txt`
+  and `baseline/README.md` (ready to train on GPU once annotated data exists).
+- Tests: `tests/test_collectors.py`, `tests/test_cleaner.py`, `tests/test_baseline.py`.
 - Cleaner run on all three sources (output in `data/processed/`):
   ODC 238 articles -> 10,351 sentences; VOA 200 -> 3,055; Wikipedia 50 -> 1,968.
   Total 488 articles -> 15,374 sentences.
